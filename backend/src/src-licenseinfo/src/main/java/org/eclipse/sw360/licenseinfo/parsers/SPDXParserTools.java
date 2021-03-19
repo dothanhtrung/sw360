@@ -16,8 +16,11 @@ import com.google.common.collect.Sets;
 import org.eclipse.sw360.datahandler.common.CommonUtils;
 import org.eclipse.sw360.datahandler.thrift.attachments.AttachmentContent;
 import org.eclipse.sw360.datahandler.thrift.licenseinfo.*;
+import org.eclipse.sw360.licenses.tools.SpdxConnector;
 import org.apache.jena.ext.xerces.util.XMLChar;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -131,16 +134,16 @@ public class SPDXParserTools {
     }
 
     /*
-     * Get localName in attribute rdf:about or rdf:resource
+     * Get value of attribute rdf:about or rdf:resource
      */
-    private static String getResourceLocalName(Node n) {
+    private static String getResource(Node n) {
         if (n instanceof Element) {
             Element e = (Element) n;
             String[] attrs = { RDF_ABOUT, RDF_RESOURCE };
             for (String attr : attrs) {
-                String label = e.getAttributeNS(RDF_NAMESPACE, attr);
-                if (!isNullEmptyOrWhitespace(label)) {
-                    return getLocalName(label);
+                String res = e.getAttributeNS(RDF_NAMESPACE, attr);
+                if (!isNullEmptyOrWhitespace(res)) {
+                    return res;
                 }
             }
         }
@@ -226,6 +229,24 @@ public class SPDXParserTools {
             if (!isNullEmptyOrWhitespace(name)) {
                 return name.replace(LICENSE_REF_PREFIX, "");
             }
+        }
+        return "";
+    }
+
+    private static String getLicenseNameFromResource(Node n) {
+        String resource = getResource(n);
+        if (!isNullEmptyOrWhitespace(resource)) {
+            resource = URLDecoder.decode(resource, StandardCharsets.UTF_8);
+            List<String> spdxIds = SpdxConnector.getAllSpdxLicenseIds();
+            for (String spdxId : spdxIds) {
+                if (resource.endsWith(spdxId)) {
+                    int beforeLicense = resource.length()-spdxId.length()-1;
+                    if (!XMLChar.isNCName(resource.charAt(beforeLicense))) {
+                        return spdxId;
+                    }
+                }
+            }
+            return getLocalName(resource).replace(LICENSE_REF_PREFIX, "");
         }
         return "";
     }
@@ -435,7 +456,7 @@ public class SPDXParserTools {
         Node[] relTypeNodes = findMultipleSpdxNodes(doc, SPDX_RELATIONSHIP_TYPE);
         List<Node> retval = new ArrayList<>();
         for (Node relTypeNode : relTypeNodes) {
-            String relType = getResourceLocalName(relTypeNode);
+            String relType = getLocalName(getResource(relTypeNode));
             if (relType.equals(RELATIONSHIP_TYPE_DESCRIBES)) {
                 Node parentNode = relTypeNode.getParentNode();
                 Node[] relatedElementNodes = findMultipleSpdxNodes(parentNode, SPDX_RELATED_SPDX_ELEMENT);
@@ -470,7 +491,7 @@ public class SPDXParserTools {
                     return lwt.getLicenseName();
                 }
 
-                return getResourceLocalName(license).replace(LICENSE_REF_PREFIX, "");
+                return getLicenseNameFromResource(license);
         }
     }
 
@@ -562,9 +583,9 @@ public class SPDXParserTools {
                     if (lwt != null)
                         result.add(lwt.getLicenseSpdxId());
                     else {
-                        licenseId = getResourceLocalName(spdxLicenseInfo);
+                        licenseId = getLicenseNameFromResource(spdxLicenseInfo);
                         if (!isNullEmptyOrWhitespace(licenseId))
-                            result.add(licenseId.replace(LICENSE_REF_PREFIX, ""));
+                            result.add(licenseId);
                     }
                 }
                 break;
